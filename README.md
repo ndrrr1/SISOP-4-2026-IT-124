@@ -1863,6 +1863,9 @@ touch soal_3/logs/libraryit.log
 sudo chown -R "$USER:$USER" soal_3/data soal_3/logs
 mkdir -p soal_2/encrypted_storage soal_2/fuse_mount
 ```
+
+---
+
 # Kesimpulan
 
 Dari ketiga soal pada modul ini, saya dapat memahami beberapa konsep penting dalam Sistem Operasi.
