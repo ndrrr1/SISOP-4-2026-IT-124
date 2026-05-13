@@ -1,0 +1,21 @@
+services:
+  libraryit-server:
+    build: .
+    container_name: libraryit-server
+    ports:
+      - "445:445"
+    volumes:
+      - ./data:/libraryit
+      - ./logs:/var/log/libraryit
+    command: server
+    restart: unless-stopped
+
+  libraryit-logger:
+    build: .
+    container_name: libraryit-logger
+    volumes:
+      - ./logs:/var/log/libraryit
+    command: logger
+    depends_on:
+      - libraryit-server
+    restart: unless-stopped
