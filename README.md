@@ -8,6 +8,8 @@
 
 ## Struktur Repository
 
+Struktur repository/ZIP yang digunakan adalah sebagai berikut.
+
 ```text
 .
 ├── README.md
@@ -16,57 +18,116 @@
 ├── soal_2
 │   ├── client.c
 │   ├── Dockerfile
-│   ├── encrypted_storage
+│   ├── encrypted_storage/
 │   ├── fuse.c
-│   ├── fuse_mount
+│   ├── fuse_mount/
 │   └── server
 └── soal_3
-    ├── data
-    │   ├── docs
-    │   ├── ebooks
-    │   ├── papers
-    │   └── sourcecode
+    ├── data/
+    │   ├── docs/
+    │   ├── ebooks/
+    │   ├── papers/
+    │   └── sourcecode/
     ├── docker-compose.yml
     ├── Dockerfile
     ├── entrypoint.sh
-    ├── logs
+    ├── logs/
     │   └── libraryit.log
     └── smb.conf
 ```
+
+Catatan:
+
+* Folder kosong seperti `encrypted_storage`, `fuse_mount`, `data`, dan `logs` tetap dibuat karena dibutuhkan saat runtime.
+* Pada GitHub, folder kosong dapat berisi `.gitkeep`. File tersebut hanya berfungsi agar folder kosong tetap muncul di repository dan tidak memengaruhi program.
 
 ---
 
 # Pendahuluan
 
-Pada modul ini saya mengerjakan tiga soal yang berhubungan dengan konsep Sistem Operasi, khususnya penggunaan **FUSE**, **file system virtual**, **enkripsi sederhana**, **Docker**, dan **Samba file sharing**. Setiap soal memiliki fokus yang berbeda, tetapi secara umum semuanya berkaitan dengan bagaimana sistem operasi mengelola file, proses, service, permission, dan komunikasi antarprogram.
+Pada Modul 4 Sistem Operasi ini, saya mengerjakan tiga soal yang berhubungan dengan **FUSE**, **file system virtual**, **enkripsi file sederhana**, **Docker**, **Samba file sharing**, permission user, persistence data, dan logging.
 
 Secara garis besar:
 
-* **Soal 1** membahas pembuatan file system virtual menggunakan FUSE untuk menampilkan file khusus `tujuan.txt`.
-* **Soal 2** membahas file system berbasis FUSE yang menyimpan file dalam bentuk terenkripsi menggunakan XOR dan menghubungkannya dengan server database melalui Docker.
-* **Soal 3** membahas pembuatan server file sharing menggunakan Samba di Docker, pengaturan permission user, persistence data, dan sistem logging.
+* **Soal 1** membuat file system virtual menggunakan FUSE. Program menampilkan file tambahan bernama `tujuan.txt` yang berisi gabungan koordinat dari beberapa file sumber.
+* **Soal 2** membuat file system FUSE yang menyimpan file dalam bentuk terenkripsi menggunakan XOR. Hasil mount FUSE kemudian digunakan oleh server database yang berjalan di Docker.
+* **Soal 3** membuat file sharing server menggunakan Samba di Docker. Program mengatur user, group, permission folder, persistence data, dan logging aktivitas.
 
-Dengan mengerjakan modul ini, saya dapat memahami bagaimana FUSE dapat digunakan untuk membuat tampilan file system yang berbeda dari penyimpanan aslinya, bagaimana file dapat dienkripsi saat disimpan, serta bagaimana Samba dapat dikonfigurasi untuk membatasi hak akses berdasarkan user.
+Modul ini memperlihatkan bahwa sistem operasi tidak hanya menjalankan program, tetapi juga mengatur bagaimana file disimpan, bagaimana hak akses diterapkan, bagaimana service berjalan di background, dan bagaimana aktivitas sistem dicatat melalui log.
 
 ---
 
-# Requirement Umum
+# Cara Menjalankan dari ZIP yang Baru Didownload
 
-Sebelum menjalankan program, beberapa package yang dibutuhkan dapat diinstall dengan command berikut.
+Bagian ini dibuat supaya orang yang baru download ZIP dapat langsung menjalankan program tanpa bergantung pada folder pribadi seperti `~/Modul 4`.
+
+Semua command di bawah dijalankan dari **folder utama repository**, yaitu folder yang berisi:
+
+```text
+soal_1  soal_2  soal_3
+```
+
+Jika ZIP didownload dari GitHub, biasanya folder hasil extract bernama:
+
+```text
+SISOP-4-2026-IT-124-main
+```
+
+Masuk ke folder tersebut, contoh:
+
+```bash
+cd ~/Downloads/SISOP-4-2026-IT-124-main
+```
+
+Jika nama folder berbeda, sesuaikan dengan folder hasil extract. Pastikan posisi sudah benar dengan command:
+
+```bash
+ls
+```
+
+Hasil yang diharapkan:
+
+```text
+soal_1  soal_2  soal_3
+```
+
+---
+
+## Requirement Umum
+
+Install dependency yang dibutuhkan:
 
 ```bash
 sudo apt update
-sudo apt install -y gcc pkg-config libfuse3-dev fuse3 tree docker.io smbclient cifs-utils python3 curl zip unzip
+sudo apt install -y gcc pkg-config libfuse3-dev fuse3 docker.io smbclient cifs-utils tree zip unzip curl xxd
+```
+
+Aktifkan Docker:
+
+```bash
 sudo systemctl enable --now docker
+```
+
+Aktifkan module FUSE:
+
+```bash
 sudo modprobe fuse
 ```
 
-Untuk FUSE yang memakai opsi `allow_other`, pastikan konfigurasi berikut aktif.
+Aktifkan konfigurasi `allow_other` untuk FUSE:
 
 ```bash
 sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf
 grep -q '^user_allow_other' /etc/fuse.conf || echo 'user_allow_other' | sudo tee -a /etc/fuse.conf
 ```
+
+Jika `docker compose` belum tersedia, install alternatif berikut:
+
+```bash
+sudo apt install -y docker-compose
+```
+
+Jika memakai `docker-compose` lama, command `sudo docker compose ...` dapat diganti menjadi `sudo docker-compose ...`.
 
 ---
 
@@ -76,9 +137,11 @@ grep -q '^user_allow_other' /etc/fuse.conf || echo 'user_allow_other' | sudo tee
 
 Pada soal pertama, dibuat program C bernama `kenz_rescue.c` menggunakan FUSE. Program ini melakukan mount terhadap folder sumber berisi file perjalanan Mas Amba, yaitu `1.txt` sampai `7.txt`.
 
-Di dalam mount point, seluruh file asli tetap dapat dibaca. Selain itu, program juga menambahkan file virtual bernama `tujuan.txt`. File ini tidak benar-benar ada di folder sumber, tetapi muncul di hasil mount. Isi dari `tujuan.txt` dibuat dengan membaca seluruh baris yang diawali dengan `KOORD:` dari file `1.txt` sampai `7.txt`, lalu menggabungkannya menjadi tujuan akhir Mas Amba.
+Di dalam mount point, seluruh file asli tetap dapat dibaca. Selain itu, program juga menambahkan file virtual bernama `tujuan.txt`. File ini tidak benar-benar ada di folder sumber, tetapi muncul di hasil mount.
 
-Output akhir yang diharapkan dari file virtual tersebut adalah:
+Isi dari `tujuan.txt` dibuat dengan membaca seluruh baris yang diawali dengan `KOORD:` dari file `1.txt` sampai `7.txt`, kemudian menggabungkan semua potongan koordinat tersebut menjadi tujuan akhir Mas Amba.
+
+Output akhir yang diharapkan:
 
 ```text
 Tujuan Mas Amba: -7.957382728443728,112.4698688227961,23:59 WIB
@@ -88,15 +151,24 @@ Tujuan Mas Amba: -7.957382728443728,112.4698688227961,23:59 WIB
 
 ## B. File yang Digunakan
 
-* `soal_1/kenz_rescue.c`
-* folder input runtime `amba_files/`
-* mount point runtime `mnt/`
+File utama yang dikumpulkan:
 
-Pada repository final, folder `amba_files` dan `mnt` tidak ikut dikumpulkan karena keduanya merupakan folder runtime/testing.
+* `soal_1/kenz_rescue.c`
+
+Folder/file runtime yang dibuat saat testing:
+
+* `soal_1/amba_files/`
+* `soal_1/mnt/`
+* `soal_1/kenz_rescue`
+
+Folder `amba_files` dan `mnt` sengaja tidak wajib ada dari awal karena keduanya merupakan bahan runtime/testing.
 
 ---
 
 ## C. Kode Lengkap `kenz_rescue.c`
+
+<details>
+<summary>Klik untuk melihat kode lengkap kenz_rescue.c</summary>
 
 ```c
 #define FUSE_USE_VERSION 31
@@ -394,12 +466,15 @@ int main(int argc, char *argv[]) {
     free(fuse_argv);
     return ret;
 }
-
 ```
+
+</details>
 
 ---
 
-## D. Cara Menjalankan dan Hasil per Tahap
+## D. Cara Menjalankan Soal 1 dari ZIP
+
+Jalankan dari folder utama repository.
 
 ### 1. Masuk ke folder soal 1
 
@@ -407,67 +482,100 @@ int main(int argc, char *argv[]) {
 cd soal_1
 ```
 
-### 2. Siapkan folder input dan mount point
+### 2. Buat folder runtime
+
+Pada ZIP bersih, folder `amba_files` dan `mnt` belum wajib ada, sehingga dibuat manual.
 
 ```bash
+fusermount3 -u mnt 2>/dev/null || true
+rm -rf amba_files mnt fuse.log kenz_rescue
 mkdir -p amba_files
 mkdir -p mnt
 ```
 
-Folder `amba_files` diisi dengan file:
+### 3. Buat bahan file input otomatis
 
-```text
-1.txt
-2.txt
-3.txt
-4.txt
-5.txt
-6.txt
-7.txt
+Karena file `1.txt` sampai `7.txt` adalah bahan uji runtime, file tersebut dapat dibuat otomatis dengan command berikut.
+
+```bash
+cat > amba_files/1.txt <<'EOF'
+=== HARI 1 ===
+KOORD: -7.957
+EOF
+
+cat > amba_files/2.txt <<'EOF'
+=== HARI 2 ===
+KOORD: 382728
+EOF
+
+cat > amba_files/3.txt <<'EOF'
+=== HARI 3 ===
+KOORD: 443728,
+EOF
+
+cat > amba_files/4.txt <<'EOF'
+=== HARI 4 ===
+KOORD: 112.469
+EOF
+
+cat > amba_files/5.txt <<'EOF'
+=== HARI 5 ===
+KOORD: 8688227961,
+EOF
+
+cat > amba_files/6.txt <<'EOF'
+=== HARI 6 ===
+KOORD: 23:
+EOF
+
+cat > amba_files/7.txt <<'EOF'
+=== HARI 7 ===
+KOORD: 59 WIB
+EOF
 ```
 
-Masing-masing file harus memiliki baris yang diawali dengan `KOORD:`.
+Cek file input:
 
-### 3. Compile program
+```bash
+ls amba_files
+```
+
+Hasil yang diharapkan:
+
+```text
+1.txt  2.txt  3.txt  4.txt  5.txt  6.txt  7.txt
+```
+
+### 4. Compile program
 
 ```bash
 gcc kenz_rescue.c $(pkg-config fuse3 --cflags --libs) -o kenz_rescue
 ```
 
-Hasil yang diharapkan:
+Jika tidak ada error, file executable `kenz_rescue` berhasil dibuat.
 
-* file executable `kenz_rescue` berhasil dibuat
-* tidak ada error saat proses compile
+### 5. Jalankan FUSE
 
-### 4. Jalankan FUSE
+Agar mudah dites dalam satu terminal, FUSE dijalankan di background dan output-nya diarahkan ke `fuse.log`.
 
 ```bash
-./kenz_rescue amba_files mnt -f
+./kenz_rescue amba_files mnt -f > fuse.log 2>&1 &
+sleep 2
 ```
 
-Terminal akan terlihat diam karena FUSE berjalan di foreground. Hal tersebut normal.
-
-### 5. Buka terminal baru dan cek isi mount point
+### 6. Cek isi mount point
 
 ```bash
-cd soal_1
 ls mnt
 ```
 
 Hasil yang diharapkan:
 
 ```text
-1.txt
-2.txt
-3.txt
-4.txt
-5.txt
-6.txt
-7.txt
-tujuan.txt
+1.txt  2.txt  3.txt  4.txt  5.txt  6.txt  7.txt  tujuan.txt
 ```
 
-### 6. Cek isi `tujuan.txt`
+### 7. Cek isi `tujuan.txt`
 
 ```bash
 cat mnt/tujuan.txt
@@ -479,7 +587,7 @@ Hasil yang diharapkan:
 Tujuan Mas Amba: -7.957382728443728,112.4698688227961,23:59 WIB
 ```
 
-### 7. Cek bahwa file virtual tidak ada di folder asli
+### 8. Pastikan `tujuan.txt` hanya file virtual
 
 ```bash
 ls amba_files
@@ -488,38 +596,40 @@ ls amba_files
 Hasil yang diharapkan:
 
 ```text
-1.txt
-2.txt
-3.txt
-4.txt
-5.txt
-6.txt
-7.txt
+1.txt  2.txt  3.txt  4.txt  5.txt  6.txt  7.txt
 ```
 
-File `tujuan.txt` hanya muncul di mount point, bukan di folder asli.
+File `tujuan.txt` hanya muncul di folder `mnt`, bukan di `amba_files`.
 
-### 8. Unmount FUSE
+### 9. Stop Soal 1
 
 ```bash
 fusermount3 -u mnt
 ```
 
+Kembali ke folder utama repository:
+
+```bash
+cd ..
+```
+
 ---
 
-## E. Penjelasan Kode per Bagian
+## E. Penjelasan Kode Soal 1
 
 ### 1. Konfigurasi FUSE
 
+Program menggunakan FUSE versi 3.
+
 ```c
 #define FUSE_USE_VERSION 31
-#define _GNU_SOURCE
-#define _FILE_OFFSET_BITS 64
 ```
 
-Bagian ini digunakan agar program kompatibel dengan FUSE versi 3 dan dapat menangani operasi file dengan ukuran offset yang sesuai.
+Selain itu, program juga memakai `_FILE_OFFSET_BITS 64` agar operasi file kompatibel dengan ukuran offset yang lebih besar.
 
 ### 2. File virtual `tujuan.txt`
+
+Program mendefinisikan:
 
 ```c
 #define VIRTUAL_FILE "tujuan.txt"
@@ -527,29 +637,29 @@ Bagian ini digunakan agar program kompatibel dengan FUSE versi 3 dan dapat menan
 #define OUT_PREFIX "Tujuan Mas Amba: "
 ```
 
-Tiga konstanta ini digunakan untuk menentukan nama file virtual, prefix baris koordinat yang dicari, dan format awal output.
+`VIRTUAL_FILE` adalah nama file virtual yang dimunculkan di mount point. `KOORD_PREFIX` digunakan untuk mencari baris koordinat pada file sumber. `OUT_PREFIX` digunakan sebagai awalan isi file `tujuan.txt`.
 
 ### 3. Fungsi `build_tujuan()`
 
-Fungsi ini merupakan inti dari soal pertama. Program membuka file `1.txt` sampai `7.txt`, mencari baris yang diawali dengan `KOORD:`, membersihkan spasi dan newline, lalu menggabungkan potongan koordinat tersebut menjadi satu string.
+Fungsi ini membuka file `1.txt` sampai `7.txt`, mencari baris yang diawali dengan `KOORD:`, membersihkan spasi dan newline, lalu menggabungkan seluruh potongan koordinat.
 
 ### 4. Fungsi `kenz_readdir()`
 
-Fungsi ini digunakan saat user menjalankan `ls` pada mount point. Program akan menampilkan isi folder asli, lalu menambahkan `tujuan.txt` sebagai file virtual.
+Fungsi ini digunakan ketika user menjalankan `ls` pada mount point. Program membaca isi folder asli, lalu menambahkan file virtual `tujuan.txt`.
 
 ### 5. Fungsi `kenz_getattr()`
 
-Fungsi ini digunakan untuk memberikan atribut file. Jika path yang diminta adalah `/tujuan.txt`, maka program menghitung ukuran isi virtual file dan menandainya sebagai file read-only.
+Fungsi ini memberi atribut file. Untuk `tujuan.txt`, program membuat atribut file read-only dengan permission `0444`.
 
 ### 6. Fungsi `kenz_read()`
 
-Fungsi ini menangani pembacaan file. Jika file yang dibaca adalah `tujuan.txt`, maka isi file dibuat secara dinamis dari hasil `build_tujuan()`. Jika file biasa yang dibaca, maka program membaca file asli dari folder sumber.
+Jika file yang dibaca adalah file biasa, program membaca file asli dari folder sumber. Jika file yang dibaca adalah `tujuan.txt`, program membuat isinya secara dinamis dari gabungan koordinat.
 
 ---
 
 ## F. Hasil Akhir Soal 1
 
-Struktur final yang dikumpulkan untuk soal 1 adalah:
+Struktur final soal 1:
 
 ```text
 soal_1/
@@ -562,22 +672,24 @@ soal_1/
 
 ## A. Deskripsi Soal
 
-Pada soal kedua, dibuat file system menggunakan FUSE yang menyimpan data ke folder `encrypted_storage`. Data yang dilihat user melalui folder `fuse_mount` tampil seperti file normal, tetapi data asli yang tersimpan di backend memiliki ekstensi `.enc` dan dienkripsi menggunakan XOR key `0x76`.
+Pada soal kedua, dibuat file system menggunakan FUSE yang menyimpan data ke folder `encrypted_storage`. Data yang dilihat user melalui folder `fuse_mount` tampil seperti file normal, tetapi data asli yang tersimpan di backend memiliki ekstensi `.enc` dan terenkripsi menggunakan XOR key `0x76`.
 
-Selain itu, soal ini juga menggunakan server database yang dijalankan melalui Docker. Folder hasil mount FUSE dihubungkan ke container sebagai `/app/db`, sehingga server dapat membaca data yang sudah didekripsi oleh FUSE.
+Selain itu, soal ini menggunakan server database yang dijalankan melalui Docker. Folder hasil mount FUSE dihubungkan ke container sebagai `/app/db`, sehingga server dapat membaca file melalui layer FUSE.
 
 Secara konsep:
 
 * user membaca/menulis file melalui `fuse_mount`
 * file asli disimpan di `encrypted_storage`
-* setiap file biasa disimpan dengan ekstensi `.enc`
-* isi file di backend dienkripsi menggunakan XOR
+* file backend diberi ekstensi `.enc`
+* isi file backend dienkripsi menggunakan XOR key `0x76`
 * Docker menjalankan binary `server`
-* client C digunakan untuk terhubung ke server melalui port `9000`
+* client C terhubung ke server melalui port `9000`
 
 ---
 
 ## B. File yang Digunakan
+
+File utama:
 
 * `soal_2/fuse.c`
 * `soal_2/client.c`
@@ -586,9 +698,19 @@ Secara konsep:
 * `soal_2/encrypted_storage/`
 * `soal_2/fuse_mount/`
 
+File runtime yang dibuat saat testing:
+
+* `soal_2/fuse`
+* `soal_2/client`
+* file `.enc` di `encrypted_storage`
+* file normal di `fuse_mount`
+
 ---
 
 ## C. Kode Lengkap `fuse.c`
+
+<details>
+<summary>Klik untuk melihat kode lengkap fuse.c</summary>
 
 ```c
 #define FUSE_USE_VERSION 31
@@ -899,12 +1021,16 @@ int main(int argc, char *argv[]) {
     free(fuse_argv);
     return ret;
 }
-
 ```
+
+</details>
 
 ---
 
 ## D. Kode Lengkap `client.c`
+
+<details>
+<summary>Klik untuk melihat kode lengkap client.c</summary>
 
 ```c
 #define _POSIX_C_SOURCE 200112L
@@ -1053,12 +1179,16 @@ int main(int argc, char *argv[]) {
     close(fd);
     return EXIT_SUCCESS;
 }
-
 ```
+
+</details>
 
 ---
 
-## E. Isi `Dockerfile`
+## E. Isi `Dockerfile` Soal 2
+
+<details>
+<summary>Klik untuk melihat Dockerfile soal_2</summary>
 
 ```dockerfile
 FROM ubuntu:latest
@@ -1069,12 +1199,15 @@ RUN chmod +x /app/server && mkdir -p /app/db
 
 EXPOSE 9000
 CMD ["/app/server"]
-
 ```
+
+</details>
 
 ---
 
-## F. Cara Menjalankan dan Hasil per Tahap
+## F. Cara Menjalankan Soal 2 dari ZIP
+
+Jalankan dari folder utama repository.
 
 ### 1. Masuk ke folder soal 2
 
@@ -1082,14 +1215,20 @@ CMD ["/app/server"]
 cd soal_2
 ```
 
-### 2. Siapkan folder penyimpanan dan mount point
+### 2. Siapkan folder runtime
+
+Pada ZIP bersih, folder `encrypted_storage` dan `fuse_mount` bisa saja kosong. Buat ulang agar aman.
 
 ```bash
+fusermount3 -u fuse_mount 2>/dev/null || true
+sudo docker rm -f db_app 2>/dev/null || true
+rm -f fuse client fuse.log
+rm -rf encrypted_storage/* fuse_mount/*
 mkdir -p encrypted_storage
 mkdir -p fuse_mount
 ```
 
-### 3. Compile program FUSE dan client
+### 3. Compile program
 
 ```bash
 gcc fuse.c $(pkg-config fuse3 --cflags --libs) -o fuse
@@ -1099,48 +1238,50 @@ chmod +x server
 
 Hasil yang diharapkan:
 
-* executable `fuse` berhasil dibuat
-* executable `client` berhasil dibuat
-* binary `server` memiliki permission executable
+* file `fuse` berhasil dibuat
+* file `client` berhasil dibuat
+* file `server` memiliki permission executable
 
 ### 4. Jalankan FUSE
 
+Agar mudah dites dalam satu terminal, FUSE dijalankan di background.
+
 ```bash
-./fuse encrypted_storage fuse_mount -o allow_other -f
+./fuse encrypted_storage fuse_mount -o allow_other -f > fuse.log 2>&1 &
+sleep 2
 ```
 
-Terminal akan diam karena FUSE berjalan di foreground.
+### 5. Uji tulis dan baca file
 
-### 5. Buka terminal baru dan uji tulis file
+Pada soal 2 tidak perlu menyiapkan file bahan dari luar. File uji dapat dibuat langsung melalui folder `fuse_mount`, lalu FUSE akan otomatis menyimpannya ke `encrypted_storage` sebagai file `.enc`.
 
 ```bash
-cd soal_2
 echo "halo database" > fuse_mount/test.txt
 cat fuse_mount/test.txt
 ls encrypted_storage
 ```
 
-Hasil yang diharapkan saat melihat dari `fuse_mount`:
+Hasil `cat fuse_mount/test.txt`:
 
 ```text
 halo database
 ```
 
-Sedangkan di `encrypted_storage`, file akan tersimpan sebagai:
+Hasil `ls encrypted_storage`:
 
 ```text
 test.txt.enc
 ```
 
-### 6. Cek isi terenkripsi di backend
+Artinya file yang terlihat normal di `fuse_mount` tersimpan sebagai file terenkripsi di backend.
+
+### 6. Cek isi terenkripsi
 
 ```bash
 xxd encrypted_storage/test.txt.enc
 ```
 
-Hasil yang diharapkan:
-
-* isi file tidak terbaca sebagai teks normal karena sudah melalui proses XOR
+Isi file seharusnya tidak terbaca sebagai teks normal.
 
 ### 7. Build Docker image
 
@@ -1168,7 +1309,7 @@ sudo docker logs db_app
 Hasil yang diharapkan:
 
 * container `db_app` berjalan
-* server siap menerima koneksi pada port `9000`
+* server aktif pada port `9000`
 
 ### 10. Jalankan client
 
@@ -1184,73 +1325,86 @@ Type EXIT to quit.
 db>
 ```
 
-Untuk keluar dari client:
+Coba command:
+
+```text
+HELP
+```
+
+Untuk keluar:
 
 ```text
 EXIT
 ```
 
-### 11. Stop service
+### 11. Stop Soal 2
 
 ```bash
 sudo docker rm -f db_app
 fusermount3 -u fuse_mount
 ```
 
+Kembali ke folder utama repository:
+
+```bash
+cd ..
+```
+
 ---
 
-## G. Penjelasan Kode per Bagian
+## G. Penjelasan Kode Soal 2
 
-### 1. XOR key dan ekstensi file
+### 1. XOR key
+
+Program menggunakan:
 
 ```c
 #define XOR_KEY 0x76
-#define ENC_EXT ".enc"
 ```
 
-`XOR_KEY` adalah kunci enkripsi sederhana yang digunakan untuk mengenkripsi dan mendekripsi isi file. `ENC_EXT` digunakan agar file backend tersimpan dengan ekstensi `.enc`.
+Key ini digunakan untuk mengenkripsi dan mendekripsi isi file. Karena XOR bersifat reversible, operasi yang sama bisa digunakan untuk proses enkripsi dan dekripsi.
 
-### 2. Fungsi `xor_buffer()`
+### 2. Ekstensi `.enc`
 
-Fungsi ini melakukan operasi XOR terhadap setiap byte file. Karena XOR bersifat reversible, fungsi yang sama dapat dipakai untuk proses enkripsi dan dekripsi.
+File backend diberi ekstensi `.enc`. Misalnya `test.txt` di `fuse_mount` akan tersimpan sebagai `test.txt.enc` di `encrypted_storage`.
 
-### 3. Fungsi `enc_readdir()`
+### 3. Fungsi `xor_buffer()`
 
-Fungsi ini mengatur tampilan saat user menjalankan `ls` pada `fuse_mount`. File yang di backend bernama `test.txt.enc` akan ditampilkan sebagai `test.txt`.
+Fungsi ini melakukan XOR terhadap setiap byte pada buffer file.
 
-### 4. Fungsi `enc_create()`
+### 4. Fungsi `enc_readdir()`
 
-Saat user membuat file melalui `fuse_mount`, program akan membuat file backend dengan tambahan ekstensi `.enc`.
+Fungsi ini mengatur tampilan isi folder. File yang tersimpan sebagai `.enc` di backend akan ditampilkan tanpa ekstensi `.enc` di mount point.
 
 ### 5. Fungsi `enc_read()`
 
-Saat file dibaca dari `fuse_mount`, program membaca file terenkripsi dari backend lalu melakukan XOR agar isi yang tampil kepada user kembali normal.
+Saat file dibaca dari `fuse_mount`, program membaca file `.enc` dari backend, melakukan XOR, lalu mengembalikan isi file dalam bentuk normal.
 
 ### 6. Fungsi `enc_write()`
 
-Saat user menulis file melalui `fuse_mount`, isi file dienkripsi terlebih dahulu menggunakan XOR, kemudian disimpan ke backend sebagai file `.enc`.
+Saat user menulis file melalui `fuse_mount`, data dienkripsi menggunakan XOR sebelum disimpan ke backend.
 
 ### 7. Program `client.c`
 
-`client.c` digunakan untuk membuat koneksi TCP ke server. Program menerima input dari user, mengirim command ke server, lalu menampilkan response yang dikirim server.
+`client.c` membuat koneksi TCP ke server. Program membaca input user, mengirim command ke server, lalu menampilkan response.
 
 ### 8. Dockerfile
 
-Dockerfile soal 2 membuat image berbasis Ubuntu, menyalin binary `server` ke `/app/server`, membuat folder `/app/db`, membuka port `9000`, dan menjalankan server.
+Dockerfile menyalin binary `server` ke `/app/server`, membuat folder `/app/db`, membuka port `9000`, dan menjalankan server.
 
 ---
 
 ## H. Hasil Akhir Soal 2
 
-Struktur final yang dikumpulkan untuk soal 2 adalah:
+Struktur final soal 2:
 
 ```text
 soal_2/
 ├── client.c
 ├── Dockerfile
-├── encrypted_storage
+├── encrypted_storage/
 ├── fuse.c
-├── fuse_mount
+├── fuse_mount/
 └── server
 ```
 
@@ -1260,21 +1414,28 @@ soal_2/
 
 ## A. Deskripsi Soal
 
-Pada soal ketiga, dibuat sistem file sharing bernama **LibraryIT** menggunakan Samba di dalam Docker. Sistem ini memiliki beberapa share, yaitu `docs`, `ebooks`, `papers`, dan `sourcecode`.
+Pada soal ketiga, dibuat sistem file sharing bernama **LibraryIT** menggunakan Samba di dalam Docker. Sistem ini memiliki beberapa share:
+
+* `docs`
+* `ebooks`
+* `papers`
+* `sourcecode`
 
 Setiap user memiliki hak akses berbeda:
 
 * `member` hanya dapat membaca share tertentu.
 * `contributor` dapat menulis ke `ebooks`, `papers`, dan `sourcecode`, tetapi tidak dapat menulis ke `docs`.
-* `librarian` dapat menulis ke `docs` serta termasuk user staff.
+* `librarian` dapat menulis ke `docs` dan termasuk user staff.
 * anonymous access tidak diperbolehkan.
 * `sourcecode` tidak dapat diakses oleh `member`.
 
-Data pada Samba disimpan ke folder host `data/`, sehingga file tetap ada meskipun container dimatikan. Selain itu, terdapat container logger yang membaca audit log Samba lalu menulis hasilnya ke `logs/libraryit.log` dengan format tertentu.
+Data Samba disimpan ke folder host `data/`, sehingga data tetap ada meskipun container dimatikan. Selain itu, terdapat logger yang membaca audit log Samba dan menuliskannya ke `logs/libraryit.log`.
 
 ---
 
 ## B. File yang Digunakan
+
+File utama:
 
 * `soal_3/Dockerfile`
 * `soal_3/docker-compose.yml`
@@ -1283,9 +1444,20 @@ Data pada Samba disimpan ke folder host `data/`, sehingga file tetap ada meskipu
 * `soal_3/data/`
 * `soal_3/logs/libraryit.log`
 
+Folder runtime:
+
+* `soal_3/data/docs/`
+* `soal_3/data/ebooks/`
+* `soal_3/data/papers/`
+* `soal_3/data/sourcecode/`
+* `soal_3/logs/`
+
 ---
 
-## C. Isi `Dockerfile`
+## C. Isi `Dockerfile` Soal 3
+
+<details>
+<summary>Klik untuk melihat Dockerfile soal_3</summary>
 
 ```dockerfile
 FROM ubuntu:latest
@@ -1308,12 +1480,16 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 445
 
 ENTRYPOINT ["/entrypoint.sh"]
-
 ```
+
+</details>
 
 ---
 
 ## D. Isi `docker-compose.yml`
+
+<details>
+<summary>Klik untuk melihat docker-compose.yml</summary>
 
 ```yaml
 services:
@@ -1337,12 +1513,16 @@ services:
     depends_on:
       - libraryit-server
     restart: unless-stopped
-
 ```
+
+</details>
 
 ---
 
 ## E. Isi `smb.conf`
+
+<details>
+<summary>Klik untuk melihat smb.conf</summary>
 
 ```ini
 [global]
@@ -1434,12 +1614,16 @@ services:
    full_audit:failure = all
    full_audit:facility = LOCAL7
    full_audit:priority = NOTICE
-
 ```
+
+</details>
 
 ---
 
 ## F. Isi `entrypoint.sh`
+
+<details>
+<summary>Klik untuk melihat entrypoint.sh</summary>
 
 ```bash
 #!/bin/bash
@@ -1538,12 +1722,15 @@ logger -p local7.notice "smbd_audit: system|startup|connect|ok|libraryit"
 testparm -s /etc/samba/smb.conf
 
 exec smbd --foreground --no-process-group --debug-stdout
-
 ```
+
+</details>
 
 ---
 
-## G. Cara Menjalankan dan Hasil per Tahap
+## G. Cara Menjalankan Soal 3 dari ZIP
+
+Jalankan dari folder utama repository.
 
 ### 1. Masuk ke folder soal 3
 
@@ -1551,23 +1738,35 @@ exec smbd --foreground --no-process-group --debug-stdout
 cd soal_3
 ```
 
-### 2. Siapkan folder dan permission
+### 2. Siapkan folder data dan logs
+
+Pada ZIP bersih, folder data dan log dibuat ulang agar aman.
 
 ```bash
-chmod +x entrypoint.sh
-mkdir -p data/docs data/ebooks data/papers data/sourcecode logs
+mkdir -p data/docs
+mkdir -p data/ebooks
+mkdir -p data/papers
+mkdir -p data/sourcecode
+mkdir -p logs
 touch logs/libraryit.log
+chmod +x entrypoint.sh
 ```
 
-### 3. Matikan service Samba bawaan host jika ada
+### 3. Matikan Samba bawaan host jika ada
+
+Langkah ini dilakukan agar port `445` tidak bentrok dengan container Samba.
 
 ```bash
 sudo systemctl stop smbd nmbd 2>/dev/null || true
 ```
 
-Langkah ini dilakukan agar port `445` tidak bentrok dengan container.
+### 4. Hapus container lama jika ada
 
-### 4. Build dan jalankan Docker Compose
+```bash
+sudo docker rm -f libraryit-server libraryit-logger 2>/dev/null || true
+```
+
+### 5. Build dan jalankan Docker Compose
 
 ```bash
 sudo docker compose down --remove-orphans 2>/dev/null || true
@@ -1577,14 +1776,14 @@ sleep 5
 sudo docker ps
 ```
 
-Hasil yang diharapkan:
+Hasil yang diharapkan terdapat container:
 
 ```text
 libraryit-server
 libraryit-logger
 ```
 
-### 5. Tes daftar share sebagai `member`
+### 6. Tes daftar share sebagai `member`
 
 ```bash
 smbclient -L //127.0.0.1 -U member --password='member123' -m SMB3
@@ -1599,16 +1798,18 @@ papers
 IPC$
 ```
 
-Share `sourcecode` tidak muncul untuk `member` karena hak aksesnya dibatasi untuk staff.
+Share `sourcecode` tidak muncul untuk `member` karena aksesnya hanya untuk group `staff`.
 
-Pesan seperti berikut dapat diabaikan karena hanya fallback SMB1 dari `smbclient`.
+Jika muncul pesan:
 
 ```text
 Reconnect with SMB1 for workgroup listing
 Unable to connect with SMB1
 ```
 
-### 6. Tes anonymous access
+pesan tersebut dapat diabaikan karena share SMB3 sudah berhasil tampil.
+
+### 7. Tes anonymous access
 
 ```bash
 smbclient -L //127.0.0.1 -N -m SMB3
@@ -1616,9 +1817,10 @@ smbclient -L //127.0.0.1 -N -m SMB3
 
 Hasil yang diharapkan:
 
-* koneksi anonymous gagal
+* anonymous access gagal
+* user tanpa login tidak dapat mengakses share
 
-### 7. Tes akses baca `docs` oleh member
+### 8. Tes member membaca `docs`
 
 ```bash
 smbclient //127.0.0.1/docs -U member --password='member123' -m SMB3 -c "ls"
@@ -1626,9 +1828,9 @@ smbclient //127.0.0.1/docs -U member --password='member123' -m SMB3 -c "ls"
 
 Hasil yang diharapkan:
 
-* user `member` dapat melihat isi folder `docs`
+* user `member` dapat membaca isi `docs`
 
-### 8. Tes upload ke `ebooks` oleh contributor
+### 9. Tes contributor upload ke `ebooks`
 
 ```bash
 echo "test ebook" > ~/test_ebook.txt
@@ -1638,9 +1840,9 @@ smbclient //127.0.0.1/ebooks -U contributor --password='contrib456' -m SMB3 -c "
 Hasil yang diharapkan:
 
 * upload berhasil
-* file muncul di share `ebooks`
+* file `test_ebook.txt` muncul di share `ebooks`
 
-### 9. Tes upload ke `papers` oleh contributor
+### 10. Tes contributor upload ke `papers`
 
 ```bash
 echo "test paper" > ~/test_paper.txt
@@ -1650,9 +1852,9 @@ smbclient //127.0.0.1/papers -U contributor --password='contrib456' -m SMB3 -c "
 Hasil yang diharapkan:
 
 * upload berhasil
-* file muncul di share `papers`
+* file `test_paper.txt` muncul di share `papers`
 
-### 10. Tes upload ke `docs` oleh librarian
+### 11. Tes librarian upload ke `docs`
 
 ```bash
 echo "dokumen librarian" > ~/test_docs.txt
@@ -1661,9 +1863,9 @@ smbclient //127.0.0.1/docs -U librarian --password='lib789' -m SMB3 -c "put $HOM
 
 Hasil yang diharapkan:
 
-* upload berhasil karena `librarian` masuk write list untuk `docs`
+* upload berhasil karena `librarian` memiliki hak tulis ke `docs`
 
-### 11. Tes contributor menulis ke `docs`
+### 12. Tes contributor tidak bisa menulis ke `docs`
 
 ```bash
 echo "dokumen contributor" > ~/contributor_docs.txt
@@ -1672,9 +1874,13 @@ smbclient //127.0.0.1/docs -U contributor --password='contrib456' -m SMB3 -c "pu
 
 Hasil yang diharapkan:
 
-* upload gagal atau access denied karena `docs` hanya dapat ditulis oleh `librarian`
+```text
+NT_STATUS_ACCESS_DENIED
+```
 
-### 12. Tes member mengakses `sourcecode`
+atau upload gagal.
+
+### 13. Tes member tidak bisa akses `sourcecode`
 
 ```bash
 smbclient //127.0.0.1/sourcecode -U member --password='member123' -m SMB3 -c "ls"
@@ -1686,7 +1892,7 @@ Hasil yang diharapkan:
 NT_STATUS_ACCESS_DENIED
 ```
 
-### 13. Tes contributor menulis ke `sourcecode`
+### 14. Tes contributor bisa upload ke `sourcecode`
 
 ```bash
 echo "print('hello sourcecode')" > ~/main.py
@@ -1695,9 +1901,10 @@ smbclient //127.0.0.1/sourcecode -U contributor --password='contrib456' -m SMB3 
 
 Hasil yang diharapkan:
 
-* upload berhasil karena `contributor` termasuk group staff
+* upload berhasil
+* file `main.py` muncul di share `sourcecode`
 
-### 14. Cek persistence data
+### 15. Cek persistence data
 
 ```bash
 sudo find data -type f
@@ -1712,51 +1919,57 @@ data/docs/test_docs.txt
 data/sourcecode/main.py
 ```
 
-Artinya file tersimpan di host melalui volume `./data:/libraryit`.
+Artinya data berhasil tersimpan di folder host `data/`, bukan hanya di dalam container.
 
-### 15. Cek log
+### 16. Cek log
 
 ```bash
 cat logs/libraryit.log | tail -30
 sudo docker logs libraryit-logger --tail=30
 ```
 
-Format yang diharapkan:
+Format log yang diharapkan:
 
 ```text
 [YYYY-MM-DD HH:MM:SS] [INFO] [username] [AKSI] [file/share]
 [YYYY-MM-DD HH:MM:SS] [WARNING] [username] [DENIED] [file/share]
 ```
 
-Contoh output:
+Contoh:
 
 ```text
 [2026-05-13 11:56:36] [INFO] [contributor] [CLOSE] [/libraryit/ebooks]
 [2026-05-13 11:56:36] [WARNING] [member] [DENIED] [/libraryit/sourcecode]
 ```
 
-### 16. Stop container
+### 17. Stop Soal 3
 
 ```bash
 sudo docker compose down
 ```
 
+Kembali ke folder utama repository:
+
+```bash
+cd ..
+```
+
 ---
 
-## H. Penjelasan Konfigurasi per Bagian
+## H. Penjelasan Konfigurasi Soal 3
 
 ### 1. `docker-compose.yml`
 
-File ini menjalankan dua service, yaitu `libraryit-server` dan `libraryit-logger`.
+File ini menjalankan dua service:
 
-* `libraryit-server` menjalankan Samba dan membuka port `445`.
-* `libraryit-logger` membaca log audit dari folder `logs`.
-* Folder `data` di host di-mount ke `/libraryit`.
-* Folder `logs` di host di-mount ke `/var/log/libraryit`.
+* `libraryit-server`, yaitu container Samba server.
+* `libraryit-logger`, yaitu container logger.
+
+Folder `data` di host di-mount ke `/libraryit`, sedangkan folder `logs` di-mount ke `/var/log/libraryit`.
 
 ### 2. Dockerfile
 
-Dockerfile menggunakan image `ubuntu:latest`, lalu menginstall Samba, modul VFS Samba, rsyslog, dan Python. Setelah itu Dockerfile menyalin `smb.conf` serta `entrypoint.sh` ke dalam container.
+Dockerfile menggunakan image Ubuntu, menginstall Samba, modul VFS Samba, rsyslog, dan Python. Setelah itu Dockerfile menyalin `smb.conf` dan `entrypoint.sh` ke dalam container.
 
 ### 3. User dan group
 
@@ -1767,15 +1980,15 @@ readonly
 staff
 ```
 
-Lalu dibuat tiga user:
+Kemudian dibuat tiga user:
 
 ```text
-member       -> group readonly
-contributor  -> group staff
-librarian    -> group staff
+member       -> readonly
+contributor  -> staff
+librarian    -> staff
 ```
 
-Password user Samba:
+Password Samba yang digunakan:
 
 ```text
 member       : member123
@@ -1785,21 +1998,21 @@ librarian    : lib789
 
 ### 4. Share `docs`
 
-Share `docs` bersifat read-only secara default, tetapi user `librarian` masuk ke `write list`. Artinya `member` dan `contributor` dapat membaca, tetapi hanya `librarian` yang dapat menulis.
+Share `docs` bersifat read-only secara default. Namun user `librarian` masuk ke `write list`, sehingga hanya `librarian` yang dapat menulis.
 
 ### 5. Share `ebooks` dan `papers`
 
-Share `ebooks` dan `papers` dapat dibaca oleh group `readonly` dan `staff`, tetapi hanya group `staff` yang dapat menulis. Karena itu, `contributor` dan `librarian` dapat menulis, sedangkan `member` hanya membaca.
+Share `ebooks` dan `papers` dapat dibaca oleh group `readonly` dan `staff`, tetapi hanya group `staff` yang dapat menulis.
 
 ### 6. Share `sourcecode`
 
-Share `sourcecode` hanya dapat diakses oleh group `staff`. Karena `member` tidak termasuk group staff, maka akses `member` ke share ini akan ditolak.
+Share `sourcecode` hanya dapat diakses oleh group `staff`. Karena `member` bukan bagian dari `staff`, maka akses ke `sourcecode` akan ditolak.
 
 ### 7. Logging
 
-Samba menggunakan modul `full_audit` untuk mencatat aktivitas file. Log mentah dikirim ke fasilitas `LOCAL7`, kemudian `rsyslog` menuliskannya ke `audit_raw.log`. Service `libraryit-logger` membaca file tersebut, memformat ulang log, dan menyimpannya ke `libraryit.log`.
+Samba menggunakan modul `full_audit` untuk mencatat aktivitas. Log mentah dikirim ke `LOCAL7`, lalu `rsyslog` menulisnya ke `audit_raw.log`. Service logger membaca log mentah tersebut, memformat ulang, lalu menyimpannya ke `libraryit.log`.
 
-Format akhirnya adalah:
+Format akhir log:
 
 ```text
 [YYYY-MM-DD HH:MM:SS] [LEVEL] [USERNAME] [AKSI] [NAMA FILE/SHARE]
@@ -1809,32 +2022,32 @@ Format akhirnya adalah:
 
 ## I. Hasil Akhir Soal 3
 
-Struktur final yang dikumpulkan untuk soal 3 adalah:
+Struktur final soal 3:
 
 ```text
 soal_3/
-├── data
-│   ├── docs
-│   ├── ebooks
-│   ├── papers
-│   └── sourcecode
+├── data/
+│   ├── docs/
+│   ├── ebooks/
+│   ├── papers/
+│   └── sourcecode/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── entrypoint.sh
-├── logs
+├── logs/
 │   └── libraryit.log
 └── smb.conf
 ```
 
 ---
 
-# Cara Membersihkan Hasil Testing Sebelum Pengumpulan
+# Cleanup Setelah Testing
 
-Sebelum dikumpulkan, file hasil testing dapat dibersihkan dengan command berikut.
+Command ini digunakan untuk mengembalikan repository ke kondisi bersih setelah testing.
+
+Jalankan dari folder utama repository.
 
 ```bash
-cd ~/"Modul 4"
-
 fusermount3 -u soal_1/mnt 2>/dev/null || true
 fusermount3 -u soal_2/fuse_mount 2>/dev/null || true
 
@@ -1842,11 +2055,12 @@ cd soal_3
 sudo docker compose down --remove-orphans 2>/dev/null || true
 cd ..
 
+sudo docker rm -f db_app 2>/dev/null || true
+
 rm -rf soal_1/amba_files
 rm -rf soal_1/mnt
-rm -f soal_1/kenz_rescue soal_1/kenz.log
+rm -f soal_1/kenz_rescue soal_1/fuse.log
 
-sudo docker rm -f db_app 2>/dev/null || true
 rm -f soal_2/fuse soal_2/client soal_2/fuse.log
 sudo rm -rf soal_2/encrypted_storage/*
 sudo rm -rf soal_2/fuse_mount/*
@@ -1860,15 +2074,88 @@ sudo rm -rf soal_3/logs/*
 mkdir -p soal_3/logs
 touch soal_3/logs/libraryit.log
 
-sudo chown -R "$USER:$USER" soal_3/data soal_3/logs
-mkdir -p soal_2/encrypted_storage soal_2/fuse_mount
+mkdir -p soal_2/encrypted_storage
+mkdir -p soal_2/fuse_mount
+mkdir -p soal_3/data/docs
+mkdir -p soal_3/data/ebooks
+mkdir -p soal_3/data/papers
+mkdir -p soal_3/data/sourcecode
+```
+
+Cek struktur akhir:
+
+```bash
+tree
+```
+
+Struktur yang diharapkan:
+
+```text
+.
+├── soal_1
+│   └── kenz_rescue.c
+├── soal_2
+│   ├── client.c
+│   ├── Dockerfile
+│   ├── encrypted_storage/
+│   ├── fuse.c
+│   ├── fuse_mount/
+│   └── server
+└── soal_3
+    ├── data/
+    │   ├── docs/
+    │   ├── ebooks/
+    │   ├── papers/
+    │   └── sourcecode/
+    ├── docker-compose.yml
+    ├── Dockerfile
+    ├── entrypoint.sh
+    ├── logs/
+    │   └── libraryit.log
+    └── smb.conf
+```
+
+---
+
+# ZIP Final
+
+Untuk membuat ZIP final dari folder utama repository, pindah satu folder ke atas terlebih dahulu.
+
+Contoh jika folder repository bernama `SISOP-4-2026-IT-124-main` dan berada di `Downloads`:
+
+```bash
+cd ~/Downloads
+zip -r SISOP-4-2026-IT-124.zip SISOP-4-2026-IT-124-main
+```
+
+Jika folder repository bernama `SISOP-4-2026-IT-124`, maka:
+
+```bash
+cd ..
+zip -r SISOP-4-2026-IT-124.zip SISOP-4-2026-IT-124
+```
+
+File yang dikumpulkan:
+
+```text
+SISOP-4-2026-IT-124.zip
+```
+
+---
+
+# Link Repository
+
+Repository GitHub:
+
+```text
+https://github.com/ndrrr1/SISOP-4-2026-IT-124
 ```
 
 ---
 
 # Kesimpulan
 
-Dari ketiga soal pada modul ini, saya dapat memahami beberapa konsep penting dalam Sistem Operasi.
+Dari ketiga soal pada modul ini, saya memahami beberapa konsep penting dalam Sistem Operasi.
 
 * **Soal 1** memperlihatkan cara membuat file virtual menggunakan FUSE dan membaca data dari beberapa file sumber.
 * **Soal 2** memperlihatkan cara membuat file system terenkripsi sederhana menggunakan FUSE serta menghubungkannya dengan server melalui Docker.
